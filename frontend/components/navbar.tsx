@@ -99,11 +99,12 @@ export function Navbar() {
   const userEmail = session?.user?.email || "No email";
 
   return (
-    <header className="fixed top-0 left-0 z-50 w-full border-b border-black/10 bg-white">
+    <header className="fixed top-0 left-0 z-50 w-full overflow-hidden border-b border-black/10 bg-white">
+      <div className="nav-border-glow" />
       <nav className="flex h-16 w-full items-center justify-between px-2 md:px-4">
         <Link href={"/"}>
           <div className="flex items-center gap-2 text-base font-semibold tracking-tight md:text-lg">
-            <div className="rounded-xl border border-black/10 bg-gradient-to-b from-white to-neutral-100 p-1.5 shadow-sm">
+            <div className="rounded-xl border border-black/10 bg-linear-to-b from-white to-neutral-100 p-1.5 shadow-sm">
               <Image src={"/globe.svg"} alt="MedCoreAI" width={22} height={22} />
             </div>
             <span>MedCoreAI</span>
@@ -210,6 +211,77 @@ export function Navbar() {
           </Popover>
         </div>
       </nav>
+      <style jsx>{`
+        .nav-border-glow {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          overflow: hidden;
+        }
+        .nav-border-glow::before,
+        .nav-border-glow::after {
+          content: "";
+          position: absolute;
+          left: -20%;
+          right: -20%;
+          height: 2px;
+          opacity: 0.95;
+          background-repeat: no-repeat;
+          background-size: 18% 100%;
+          background-position: center;
+          filter: blur(0.2px);
+        }
+        .nav-border-glow::before {
+          top: 0;
+          background-image:
+            linear-gradient(
+              90deg,
+              transparent 0%,
+              rgba(15, 23, 42, 0.15) 8%,
+              rgba(15, 23, 42, 0.9) 18%,
+              rgba(15, 23, 42, 0.98) 32%,
+              rgba(255, 255, 255, 0.95) 50%,
+              rgba(15, 23, 42, 0.98) 68%,
+              rgba(15, 23, 42, 0.9) 82%,
+              rgba(15, 23, 42, 0.15) 92%,
+              transparent 100%
+            );
+          animation: nav-border-sweep 5.6s linear infinite;
+        }
+        .nav-border-glow::after {
+          bottom: 0;
+          background-image:
+            linear-gradient(
+              90deg,
+              transparent 0%,
+              rgba(255, 255, 255, 0.18) 8%,
+              rgba(255, 255, 255, 0.88) 18%,
+              rgba(209, 213, 219, 0.96) 32%,
+              rgba(15, 23, 42, 0.92) 50%,
+              rgba(209, 213, 219, 0.96) 68%,
+              rgba(255, 255, 255, 0.88) 82%,
+              rgba(255, 255, 255, 0.18) 92%,
+              transparent 100%
+            );
+          animation: nav-border-sweep-reverse 6.8s linear infinite;
+        }
+        @keyframes nav-border-sweep {
+          0% {
+            transform: translateX(-22%);
+          }
+          100% {
+            transform: translateX(22%);
+          }
+        }
+        @keyframes nav-border-sweep-reverse {
+          0% {
+            transform: translateX(22%);
+          }
+          100% {
+            transform: translateX(-22%);
+          }
+        }
+      `}</style>
     </header>
   );
 }
