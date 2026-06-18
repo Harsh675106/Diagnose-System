@@ -128,6 +128,18 @@ function triggerPdfDownload(pdfBytes: Uint8Array, filename: string) {
     }, 60000);
 }
 
+function pdfBytesToDataUrl(pdfBytes: Uint8Array): string {
+    let binary = "";
+    const chunkSize = 0x8000;
+
+    for (let index = 0; index < pdfBytes.length; index += chunkSize) {
+        const chunk = pdfBytes.subarray(index, index + chunkSize);
+        binary += String.fromCharCode(...chunk);
+    }
+
+    return `data:application/pdf;base64,${window.btoa(binary)}`;
+}
+
 function sanitizeClonedDocument(clonedDoc: Document) {
     const allElements = clonedDoc.querySelectorAll<HTMLElement>("*");
     allElements.forEach((el) => {
@@ -1121,11 +1133,9 @@ export default function DiagnosisResultPopup({
 
             setIsClosingSuccessCard(false);
             const pdfBytes = await finalPdf.save();
-            const blob = new Blob([uint8ArrayToArrayBuffer(pdfBytes)], { type: "application/pdf" });
-            const url = URL.createObjectURL(blob);
             
             if (onPdfGenerated) {
-                onPdfGenerated(url);
+                onPdfGenerated(pdfBytesToDataUrl(pdfBytes));
             }
             
             triggerPdfDownload(pdfBytes, filename);
@@ -1154,7 +1164,11 @@ export default function DiagnosisResultPopup({
                 }
 
                 setIsClosingSuccessCard(false);
-                await downloadPdfDocument(emergencyPdf, filename);
+                const emergencyPdfBytes = await emergencyPdf.save();
+                if (onPdfGenerated) {
+                    onPdfGenerated(pdfBytesToDataUrl(emergencyPdfBytes));
+                }
+                triggerPdfDownload(emergencyPdfBytes, filename);
                 setDownloadFeedback("success");
             } catch (fallbackError) {
                 console.error("Emergency PDF generation failed:", fallbackError);

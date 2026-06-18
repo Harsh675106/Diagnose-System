@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Activity, Info, Menu, PlusSquare, Search, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Sparkles, HeartPulse, Apple, Paperclip, Image as ImageIcon, FileText, X, Circle, Square, Triangle, CalendarDays } from "lucide-react";
+import { Send, Activity, Info, Menu, PlusSquare, Search, Trash2, ChevronLeft, ChevronRight, ShieldCheck, Sparkles, HeartPulse, Apple, Paperclip, Image as ImageIcon, FileText, X, Circle, Square, Triangle, CalendarDays, Download } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -127,17 +127,31 @@ function getAgeCategoryFromYears(years: number): CalculatedAge["category"] {
     return "senior_citizen";
 }
 
+function formatDateInputValue(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function getYesterdayInputValue(): string {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return formatDateInputValue(yesterday);
+}
+
 function calculateAgeFromDob(dateOfBirth: string): CalculatedAge | null {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return null;
     const [year, month, day] = dateOfBirth.split("-").map(Number);
     const birthDate = new Date(year, month - 1, day);
     const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     if (
         birthDate.getFullYear() !== year ||
         birthDate.getMonth() !== month - 1 ||
         birthDate.getDate() !== day ||
-        birthDate > today
+        birthDate >= todayStart
     ) {
         return null;
     }
@@ -970,6 +984,8 @@ const DEFAULT_GUIDANCE = {
     ],
 };
 
+const PDF_STORAGE_KEY = "medcore_session_pdfs";
+
 export default function ChatDashboard() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -1038,7 +1054,7 @@ export default function ChatDashboard() {
     const primaryImageAttachment = attachments.find((file) => file.type.startsWith("image/")) || null;
     const suggestedImageType = suggestImageType(primaryImageAttachment, followUpQuestion, input, messages);
     const selectedDobAge = dateOfBirth ? calculateAgeFromDob(dateOfBirth) : null;
-    const todayInputValue = new Date().toISOString().slice(0, 10);
+    const latestDobInputValue = getYesterdayInputValue();
     const reportPreviewUrlsRef = useRef<string[]>([]);
     const inFlightHindiRequestsRef = useRef<Record<string, Promise<boolean>>>({});
     const failedHindiPrefetchRef = useRef<Record<string, boolean>>({});
@@ -1056,6 +1072,28 @@ export default function ChatDashboard() {
             fetchSessions();
         }
     }, [status]);
+
+    useEffect(() => {
+        try {
+            const stored = sessionStorage.getItem(PDF_STORAGE_KEY);
+            if (!stored) return;
+
+            const parsed = JSON.parse(stored) as Record<string, string>;
+            if (parsed && typeof parsed === "object") {
+                setSessionPdfs(parsed);
+            }
+        } catch {
+            // Ignore session PDF restore errors.
+        }
+    }, []);
+
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(PDF_STORAGE_KEY, JSON.stringify(sessionPdfs));
+        } catch {
+            // Ignore session PDF storage errors.
+        }
+    }, [sessionPdfs]);
 
     // Scroll to bottom
     useEffect(() => {
@@ -1173,7 +1211,6 @@ export default function ChatDashboard() {
         setFollowUpChoices([]);
         setDateOfBirth("");
         setDateOfBirthError("");
-        setSessionPdfs({});
         setInput("");
         setAttachments([]);
         setSelectedImageType("");
@@ -1274,7 +1311,10 @@ export default function ChatDashboard() {
             const link = document.createElement("a");
             link.href = existing;
             link.download = filename;
+            link.style.display = "none";
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
         } else {
             setShowDiagnosisPopup(true);
         }
@@ -1304,7 +1344,7 @@ export default function ChatDashboard() {
     function submitDateOfBirth() {
         const age = calculateAgeFromDob(dateOfBirth);
         if (!age) {
-            setDateOfBirthError("Please select a valid date of birth.");
+            setDateOfBirthError("Please select a valid date of birth before today.");
             return;
         }
 
@@ -2463,10 +2503,15 @@ export default function ChatDashboard() {
                                                     <input
                                                         type="date"
                                                         value={dateOfBirth}
-                                                        max={todayInputValue}
+                                                        max={latestDobInputValue}
                                                         onChange={(event) => {
-                                                            setDateOfBirth(event.target.value);
-                                                            setDateOfBirthError("");
+                                                            const nextDateOfBirth = event.target.value;
+                                                            setDateOfBirth(nextDateOfBirth);
+                                                            setDateOfBirthError(
+                                                                nextDateOfBirth && !calculateAgeFromDob(nextDateOfBirth)
+                                                                    ? "Please select a valid date of birth before today."
+                                                                    : ""
+                                                            );
                                                         }}
                                                         className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 shadow-inner outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                                                         disabled={loading}
@@ -2486,7 +2531,7 @@ export default function ChatDashboard() {
                                                     type="button"
                                                     size="sm"
                                                     onClick={submitDateOfBirth}
-                                                    disabled={loading || !dateOfBirth}
+                                                    disabled={loading || !dateOfBirth || !selectedDobAge}
                                                     className="h-11 rounded-xl bg-slate-900 px-5 text-xs font-semibold text-white hover:bg-black disabled:bg-slate-200"
                                                 >
                                                     Submit DOB
@@ -2924,6 +2969,23 @@ export default function ChatDashboard() {
                                     <ImageTip key={`${item}-${idx}`} text={item} />
                                 ))}
                             </ul>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 mb-4 med-lift med-fade-up">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="h-6 w-6 rounded-lg bg-slate-100 text-slate-700 grid place-items-center">
+                                    <Download className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-800">PDF Report</div>
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={handleDownloadReport}
+                                className="w-full rounded-full bg-slate-900 text-white hover:bg-black"
+                            >
+                                <Download className="mr-2 h-4 w-4" />
+                                Download PDF Report
+                            </Button>
                         </div>
                     </div>
                 )}

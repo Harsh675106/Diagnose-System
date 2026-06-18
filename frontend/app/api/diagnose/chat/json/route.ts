@@ -816,24 +816,37 @@ function extractAgeGroup(text: string): FollowupState["slots"]["ageGroup"] | und
   return undefined;
 }
 
-function calculateAgeFromDateOfBirth(text: string): { years: number; months: number; days: number; category: NonNullable<FollowupState["slots"]["ageGroup"]> } | null {
+type CalculatedDobAge = {
+  years: number;
+  months: number;
+  days: number;
+  category: NonNullable<FollowupState["slots"]["ageGroup"]>;
+};
+
+type DobAgeResult =
+  | { status: "missing" }
+  | { status: "invalid" }
+  | { status: "valid"; age: CalculatedDobAge };
+
+function calculateAgeFromDateOfBirth(text: string): DobAgeResult {
   const match = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
-  if (!match) return null;
+  if (!match) return { status: "missing" };
 
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const birthDate = new Date(year, month - 1, day);
   const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
   if (
     Number.isNaN(birthDate.getTime()) ||
     birthDate.getFullYear() !== year ||
     birthDate.getMonth() !== month - 1 ||
     birthDate.getDate() !== day ||
-    birthDate > today
+    birthDate >= todayStart
   ) {
-    return null;
+    return { status: "invalid" };
   }
 
   let years = today.getFullYear() - birthDate.getFullYear();
@@ -859,7 +872,7 @@ function calculateAgeFromDateOfBirth(text: string): { years: number; months: num
   else if (years <= 69) category = "middle_aged";
   else category = "senior_citizen";
 
-  return { years, months, days, category };
+  return { status: "valid", age: { years, months, days, category } };
 }
 
 function formatCalculatedAge(age: { years: number; months: number; days: number }): string {
@@ -2472,7 +2485,8 @@ export async function POST(req: NextRequest) {
     const gender = extractGender(userMessage);
     if (gender && parsedState?.currentQuestionId === "gender") slots.gender = gender;
     const ageGroup = extractAgeGroup(userMessage);
-    if (ageGroup && parsedState?.currentQuestionId === "age_group") slots.ageGroup = ageGroup;
+    const messageContainsDob = /\b\d{4}-\d{2}-\d{2}\b/.test(userMessage);
+    if (ageGroup && parsedState?.currentQuestionId === "age_group" && !messageContainsDob) slots.ageGroup = ageGroup;
     if (maxTurns <= 0) {
       maxTurns =
         (await openAIDecideMaxTurns({
@@ -2602,9 +2616,35 @@ export async function POST(req: NextRequest) {
       } else if (qid === "age_group") {
         const parsedAgeGroup = extractAgeGroup(userMessage);
         const dobAge = calculateAgeFromDateOfBirth(userMessage);
-        if (dobAge) {
-          slots.ageGroup = dobAge.category;
-          ageAcknowledgement = `According to your date of birth, your calculated age is ${formatCalculatedAge(dobAge)} old, so you are under the ${dobAge.category.replace(/_/g, " ")} category.`;
+        if (dobAge.status === "valid") {
+          slots.ageGroup = dobAge.age.category;
+          ageAcknowledgement = `According to your date of birth, your calculated age is ${formatCalculatedAge(dobAge.age)} old, so you are under the ${dobAge.age.category.replace(/_/g, " ")} category.`;
+        } else if (dobAge.status === "invalid") {
+          asked.delete(qid);
+          asked.delete(questionTextKey(parsedState.currentQuestionText || ""));
+
+          const retryState = makeState({
+            turns,
+            maxTurns,
+            confirmedSymptoms: Array.from(confirmed),
+            deniedSymptoms: Array.from(denied),
+            askedSymptoms: Array.from(asked),
+            topCandidates: parsedState.topCandidates || [],
+            currentQuestionId: qid,
+            currentQuestionText: parsedState.currentQuestionText,
+            currentQuestionChoices: parsedState.currentQuestionChoices,
+            imagePrediction,
+            reportAnalysis,
+            slots,
+          });
+
+          return NextResponse.json({
+            reply: "Please select a valid date of birth before today.\n\n**Question 1:** Please select your age group.",
+            follow_up_suggested: true,
+            follow_up_question: parsedState.currentQuestionText,
+            follow_up_choices: parsedState.currentQuestionChoices || null,
+            follow_up_state: retryState,
+          });
         } else if (parsedAgeGroup) {
           slots.ageGroup = parsedAgeGroup;
         }
