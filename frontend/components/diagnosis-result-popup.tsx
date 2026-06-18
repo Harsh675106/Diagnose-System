@@ -64,6 +64,8 @@ interface DiagnosisResultPopupProps {
     uploadedImage?: UploadedImage | null;
     imageIdentifiedSymptoms?: string[];
     reportIdentifiedSymptoms?: string[];
+    existingPdfUrl?: string | null;
+    onPdfGenerated?: (url: string) => void;
 }
 
 function labelize(text: string): string {
@@ -1046,6 +1048,8 @@ export default function DiagnosisResultPopup({
     uploadedImage,
     imageIdentifiedSymptoms = [],
     reportIdentifiedSymptoms = [],
+    existingPdfUrl,
+    onPdfGenerated,
 }: DiagnosisResultPopupProps) {
     const [isDownloading, setIsDownloading] = useState(false);
     const [downloadFeedback, setDownloadFeedback] = useState<"success" | "error" | null>(null);
@@ -1075,6 +1079,22 @@ export default function DiagnosisResultPopup({
     };
 
     const handleDownloadPDF = async () => {
+        if (existingPdfUrl) {
+            const safeDiagnosisName = sanitizeFilenamePart(diagnosis.diagnosis).slice(0, 30) || "Diagnosis";
+            const filename = `MedCoreAI_Report_${safeDiagnosisName}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            
+            const downloadLink = document.createElement("a");
+            downloadLink.href = existingPdfUrl;
+            downloadLink.download = filename;
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            setDownloadFeedback("success");
+            return;
+        }
+
         setIsDownloading(true);
         const safeDiagnosisName = sanitizeFilenamePart(diagnosis.diagnosis).slice(0, 30) || "Diagnosis";
         const filename = `MedCoreAI_Report_${safeDiagnosisName}_${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -1100,7 +1120,15 @@ export default function DiagnosisResultPopup({
             }
 
             setIsClosingSuccessCard(false);
-            await downloadPdfDocument(finalPdf, filename);
+            const pdfBytes = await finalPdf.save();
+            const blob = new Blob([uint8ArrayToArrayBuffer(pdfBytes)], { type: "application/pdf" });
+            const url = URL.createObjectURL(blob);
+            
+            if (onPdfGenerated) {
+                onPdfGenerated(url);
+            }
+            
+            triggerPdfDownload(pdfBytes, filename);
             setDownloadFeedback("success");
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";

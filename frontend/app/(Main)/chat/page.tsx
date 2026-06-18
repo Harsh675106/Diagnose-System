@@ -994,6 +994,7 @@ export default function ChatDashboard() {
     const [latestDiagnosis, setLatestDiagnosis] = useState<DiagnosisPayload | null>(null);
     const [latestDiagnosisMessageId, setLatestDiagnosisMessageId] = useState<string | null>(null);
     const [latestUploadedImage, setLatestUploadedImage] = useState<{ preview: string; name?: string } | null>(null);
+    const [sessionPdfs, setSessionPdfs] = useState<Record<string, string>>({});
     const [resultPanelMinimized, setResultPanelMinimized] = useState(false);
     const [mobilePanel, setMobilePanel] = useState<"none" | "history" | "prediction">("none");
     const [hindiByMessage, setHindiByMessage] = useState<Record<string, boolean>>({});
@@ -1172,6 +1173,7 @@ export default function ChatDashboard() {
         setFollowUpChoices([]);
         setDateOfBirth("");
         setDateOfBirthError("");
+        setSessionPdfs({});
         setInput("");
         setAttachments([]);
         setSelectedImageType("");
@@ -1262,6 +1264,21 @@ export default function ChatDashboard() {
             setLoading(false);
         }
     }
+
+    const handleDownloadReport = () => {
+        if (!latestDiagnosis || !latestDiagnosisMessageId) return;
+        const existing = sessionPdfs[latestDiagnosisMessageId];
+        if (existing) {
+            const safeName = latestDiagnosis.diagnosis.replace(/[^a-z0-9]/gi, '_').slice(0, 30) || "Report";
+            const filename = `MedCoreAI_Report_${safeName}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            const link = document.createElement("a");
+            link.href = existing;
+            link.download = filename;
+            link.click();
+        } else {
+            setShowDiagnosisPopup(true);
+        }
+    };
 
     async function deleteSession(id: string) {
         if (deletingSessionId) return;
@@ -2922,9 +2939,13 @@ export default function ChatDashboard() {
                 uploadedImage={latestUploadedImage || undefined}
                 imageIdentifiedSymptoms={imageIdentifiedSymptoms}
                 reportIdentifiedSymptoms={reportIdentifiedSymptoms}
+                existingPdfUrl={latestDiagnosisMessageId ? sessionPdfs[latestDiagnosisMessageId] : null}
+                onPdfGenerated={(url) => {
+                    if (latestDiagnosisMessageId) {
+                        setSessionPdfs(prev => ({ ...prev, [latestDiagnosisMessageId]: url }));
+                    }
+                }}
             />
         </div >
     );
 }
-
-
