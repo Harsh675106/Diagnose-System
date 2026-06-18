@@ -316,14 +316,14 @@ a:hover .sacred-symbol-trishul {
     conic-gradient(
       from 0deg,
       transparent 0deg,
-      transparent 62deg,
-      #020617 78deg,
-      #ffffff 88deg,
-      #020617 98deg,
-      transparent 118deg,
+      transparent 56deg,
+      #020617 76deg,
+      #ffffff 92deg,
+      #020617 108deg,
+      transparent 130deg,
       transparent 360deg
     );
-  animation: medInputBorderShine 3.2s linear infinite;
+  animation: medInputBorderShine 5.2s linear infinite;
 }
 
 .med-input-shine::after {
