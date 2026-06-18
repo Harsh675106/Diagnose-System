@@ -277,6 +277,12 @@ a:hover .sacred-symbol-trishul {
   }
 }
 
+@keyframes medInputBorderShine {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .med-fade-up {
   animation: medFadeUp 280ms ease-out both;
 }
@@ -292,4 +298,44 @@ a:hover .sacred-symbol-trishul {
 
 .med-ring-pulse {
   animation: medGlowPulse 2.4s ease-in-out infinite;
+}
+
+.med-input-shine {
+  position: relative;
+  overflow: hidden;
+  border-color: transparent;
+  isolation: isolate;
+}
+
+.med-input-shine::before {
+  content: "";
+  position: absolute;
+  inset: -60%;
+  z-index: 0;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 62deg,
+      #020617 78deg,
+      #ffffff 88deg,
+      #020617 98deg,
+      transparent 118deg,
+      transparent 360deg
+    );
+  animation: medInputBorderShine 3.2s linear infinite;
+}
+
+.med-input-shine::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: 23px;
+  background: #ffffff;
+}
+
+.med-input-shine > * {
+  position: relative;
+  z-index: 1;
 }

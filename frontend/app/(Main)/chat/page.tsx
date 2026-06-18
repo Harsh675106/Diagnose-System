@@ -2486,7 +2486,7 @@ export default function ChatDashboard() {
                 {/* Main Input Area - Floating ChatGPT Style */}
                 <div className="shrink-0 pt-2 pb-6 px-4 md:px-8 bg-white w-full border-t border-slate-100">
                     <div className="max-w-3xl mx-auto w-full">
-                        <div className="bg-slate-50 rounded-[24px] border border-slate-200 hover:border-slate-300 shadow-sm overflow-hidden focus-within:ring-1 focus-within:ring-slate-300 transition-all flex flex-col med-lift">
+                        <div className="med-input-shine bg-slate-50 rounded-[24px] border border-slate-200 hover:border-slate-300 shadow-sm focus-within:ring-1 focus-within:ring-slate-300 transition-all flex flex-col med-lift">
                             {followUpActive ? (
                                 <div className={`p-3 bg-white flex flex-col gap-3 border-b border-[#e5e5e5] ${isAgeFollowUp ? "items-stretch" : "sm:flex-row items-center justify-between"}`}>
                                     <span className="text-[13px] font-medium text-slate-600 flex items-center gap-2">
