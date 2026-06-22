@@ -77,7 +77,33 @@ function sanitizeFilenamePart(value: string): string {
 }
 
 function uint8ArrayToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(arrayBuffer).set(bytes);
+    return arrayBuffer;
+}
+
+function pdfDataUrlToBytes(dataUrl: string): Uint8Array {
+    const [, base64 = ""] = dataUrl.split(",");
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes;
+}
+
+function toPdfText(value: string): string {
+    return value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+        .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .replace(/[\u2013\u2014\u2212]/g, "-")
+        .replace(/\u2026/g, "...")
+        .replace(/\u00A0/g, " ")
+        .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "");
 }
 
 function looksLikePdf(report?: UploadedReport | null): boolean {
@@ -264,7 +290,7 @@ async function captureReportCanvas(element: HTMLDivElement): Promise<HTMLCanvasE
 }
 
 function wrapPdfText(text: string, maxChars = 92): string[] {
-    return text
+    return toPdfText(text)
         .split("\n")
         .flatMap((paragraph) => {
             const trimmed = paragraph.trim();
@@ -302,7 +328,7 @@ function wrapPdfTextToWidth(
     fontSize: number,
     maxWidth: number
 ): string[] {
-    return text
+    return toPdfText(text)
         .split("\n")
         .flatMap((paragraph) => {
             const trimmed = paragraph.trim();
@@ -532,7 +558,7 @@ async function appendStyledReportPdf(
         lines.forEach((line) => {
             const wrapped = wrapPdfTextToWidth(line, font, size, maxWidth);
             wrapped.forEach((wrappedLine) => {
-                page.drawText(wrappedLine, {
+                page.drawText(toPdfText(wrappedLine), {
                     x,
                     y,
                     size,
@@ -771,7 +797,7 @@ async function appendStyledReportPdf(
             font: regularFont,
             color: rgb(0.84, 0.84, 0.86),
         });
-        page.drawText(diagnosisLabel, {
+        page.drawText(toPdfText(diagnosisLabel), {
             x: textX,
             y: cursorY - 54,
             size: 24,
@@ -1014,7 +1040,7 @@ async function appendImageToPdf(pdfDoc: PDFDocument, imageUrl: string, label?: s
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const labelText = label?.trim() ? label : "Uploaded Medical Image";
 
-    page.drawText(labelText, {
+    page.drawText(toPdfText(labelText), {
         x: margin,
         y: pageHeight - margin,
         size: titleSize,
@@ -1094,14 +1120,18 @@ export default function DiagnosisResultPopup({
         if (existingPdfUrl) {
             const safeDiagnosisName = sanitizeFilenamePart(diagnosis.diagnosis).slice(0, 30) || "Diagnosis";
             const filename = `MedCoreAI_Report_${safeDiagnosisName}_${new Date().toISOString().slice(0, 10)}.pdf`;
-            
-            const downloadLink = document.createElement("a");
-            downloadLink.href = existingPdfUrl;
-            downloadLink.download = filename;
-            downloadLink.style.display = "none";
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
+
+            if (existingPdfUrl.startsWith("data:application/pdf")) {
+                triggerPdfDownload(pdfDataUrlToBytes(existingPdfUrl), filename);
+            } else {
+                const downloadLink = document.createElement("a");
+                downloadLink.href = existingPdfUrl;
+                downloadLink.download = filename;
+                downloadLink.style.display = "none";
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            }
             
             setDownloadFeedback("success");
             return;

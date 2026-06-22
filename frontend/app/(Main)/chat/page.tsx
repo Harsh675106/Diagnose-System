@@ -1066,6 +1066,38 @@ const DEFAULT_GUIDANCE = {
 
 const PDF_STORAGE_KEY = "medcore_session_pdfs";
 
+function downloadStoredPdf(pdfUrl: string, filename: string) {
+    if (pdfUrl.startsWith("data:application/pdf")) {
+        const [, base64 = ""] = pdfUrl.split(",");
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let index = 0; index < binary.length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = filename;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000);
+        return;
+    }
+
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 export default function ChatDashboard() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -1388,13 +1420,7 @@ export default function ChatDashboard() {
         if (existing) {
             const safeName = latestDiagnosis.diagnosis.replace(/[^a-z0-9]/gi, '_').slice(0, 30) || "Report";
             const filename = `MedCoreAI_Report_${safeName}_${new Date().toISOString().slice(0, 10)}.pdf`;
-            const link = document.createElement("a");
-            link.href = existing;
-            link.download = filename;
-            link.style.display = "none";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            downloadStoredPdf(existing, filename);
         } else {
             setShowDiagnosisPopup(true);
         }
