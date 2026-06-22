@@ -1837,7 +1837,58 @@ export default function ChatDashboard() {
                 if (!payloadObj) {
                     structuredAnalysisObj = parseStructuredAnalysisForTranslation(msg.content);
                     if (structuredAnalysisObj) {
-                        textToTranslate = JSON.stringify(structuredAnalysisObj);
+                        const translateTextValue = async (value?: string) => {
+                            const cleanValue = (value || "").trim();
+                            if (!cleanValue) return value;
+
+                            const translated = await cachedFetch<{ translated_text?: string; error?: string }>(
+                                "/api/diagnose/translate",
+                                {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ text: cleanValue, target_lang: "hi" }),
+                                },
+                                10 * 60 * 1000
+                            );
+
+                            return translated.translated_text || value;
+                        };
+
+                        const translateTextList = async (items?: string[]) => {
+                            if (!Array.isArray(items)) return items;
+                            return Promise.all(items.map((item) => translateTextValue(item)));
+                        };
+
+                        const finalStructuredAnalysis = structuredAnalysisObj.kind === "image"
+                            ? {
+                                ...structuredAnalysisObj,
+                                intro: await translateTextValue(structuredAnalysisObj.intro),
+                                observations: await translateTextList(structuredAnalysisObj.observations),
+                                primary_signal: await translateTextValue(structuredAnalysisObj.primary_signal),
+                                raw_signal: await translateTextValue(structuredAnalysisObj.raw_signal),
+                                followup_text: await translateTextValue(structuredAnalysisObj.followup_text),
+                            }
+                            : {
+                                ...structuredAnalysisObj,
+                                intro: await translateTextValue(structuredAnalysisObj.intro),
+                                report_summary: await translateTextValue(structuredAnalysisObj.report_summary),
+                                serious_findings: await translateTextList(structuredAnalysisObj.serious_findings),
+                                abnormal_findings: await translateTextList(structuredAnalysisObj.abnormal_findings),
+                                normal_findings: await translateTextList(structuredAnalysisObj.normal_findings),
+                                extracted_signals: await translateTextList(structuredAnalysisObj.extracted_signals),
+                                followup_text: await translateTextValue(structuredAnalysisObj.followup_text),
+                            };
+
+                        setTranslatedByMessage((prev) => ({
+                            ...prev,
+                            [msg.id]: {
+                                content: finalStructuredAnalysis.intro || msg.content,
+                                structuredAnalysis: finalStructuredAnalysis,
+                            }
+                        } as any));
+
+                        delete failedHindiPrefetchRef.current[msg.id];
+                        return true;
                     }
                 }
 
@@ -1858,7 +1909,6 @@ export default function ChatDashboard() {
 
                 let finalTranslation = data.translated_text || msg.content;
                 let finalPayload: DiagnosisPayload | undefined = undefined;
-                let finalStructuredAnalysis: StructuredAnalysisTranslation | undefined = undefined;
 
                 if (finalTranslation.startsWith("{")) {
                     try {
@@ -1881,12 +1931,6 @@ export default function ChatDashboard() {
                                 }
                             };
                             finalTranslation = jsonParsed.text_content || msg.content;
-                        } else if (structuredAnalysisObj && jsonParsed.kind === structuredAnalysisObj.kind) {
-                            finalStructuredAnalysis = {
-                                ...structuredAnalysisObj,
-                                ...jsonParsed,
-                            } as StructuredAnalysisTranslation;
-                            finalTranslation = jsonParsed.intro || msg.content;
                         } else if (jsonParsed.text || jsonParsed.translated_text) {
                             finalTranslation = (jsonParsed.text || jsonParsed.translated_text || finalTranslation).trim();
                         }
@@ -1898,7 +1942,6 @@ export default function ChatDashboard() {
                     [msg.id]: { 
                         content: finalTranslation, 
                         payload: finalPayload,
-                        structuredAnalysis: finalStructuredAnalysis,
                     } 
                 } as any));
                 
