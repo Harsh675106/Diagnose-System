@@ -1808,6 +1808,82 @@ export default function ChatDashboard() {
         const request = (async () => {
             try {
                 setTranslatingByMessage((prev) => ({ ...prev, [msg.id]: true }));
+
+                const translateTextValue = async (value?: string | null) => {
+                    const cleanValue = (value || "").trim();
+                    if (!cleanValue) return value || "";
+
+                    const translated = await cachedFetch<{ translated_text?: string; error?: string }>(
+                        "/api/diagnose/translate",
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ text: cleanValue, target_lang: "hi" }),
+                        },
+                        10 * 60 * 1000
+                    );
+
+                    return translated.translated_text || value || "";
+                };
+
+                const translateTextList = async (items?: string[]) => {
+                    if (!Array.isArray(items)) return items;
+                    return Promise.all(items.map((item) => translateTextValue(item)));
+                };
+
+                const translateDiagnosisPayload = async (payload: DiagnosisPayload): Promise<DiagnosisPayload> => ({
+                    ...payload,
+                    diagnosis: await translateTextValue(payload.diagnosis),
+                    confirmed_symptoms: await translateTextList(payload.confirmed_symptoms),
+                    demographics: payload.demographics ? {
+                        ...payload.demographics,
+                        gender: await translateTextValue(payload.demographics.gender),
+                        age_group: await translateTextValue(payload.demographics.age_group),
+                    } : payload.demographics,
+                    disease_info: payload.disease_info ? {
+                        ...payload.disease_info,
+                        description: await translateTextValue(payload.disease_info.description),
+                        precautions: await translateTextList(payload.disease_info.precautions),
+                    } : payload.disease_info,
+                    guidance: payload.guidance ? {
+                        ...payload.guidance,
+                        home_remedies: await translateTextList(payload.guidance.home_remedies),
+                        lifestyle_changes: await translateTextList(payload.guidance.lifestyle_changes),
+                        diet_adjustments: await translateTextList(payload.guidance.diet_adjustments),
+                    } : payload.guidance,
+                    top_predictions: payload.top_predictions ? await Promise.all(payload.top_predictions.map(async (item) => ({
+                        ...item,
+                        disease: await translateTextValue(item.disease),
+                    }))) : payload.top_predictions,
+                    image_prediction: payload.image_prediction ? {
+                        ...payload.image_prediction,
+                        best_dataset: await translateTextValue(payload.image_prediction.best_dataset),
+                        best_label_name: await translateTextValue(payload.image_prediction.best_label_name),
+                        per_dataset: payload.image_prediction.per_dataset ? await Promise.all(payload.image_prediction.per_dataset.map(async (item) => ({
+                            ...item,
+                            dataset: await translateTextValue(item.dataset),
+                            top_label_name: await translateTextValue(item.top_label_name),
+                            scores: item.scores ? await Promise.all(item.scores.map(async (score) => ({
+                                ...score,
+                                label_name: await translateTextValue(score.label_name),
+                            }))) : item.scores,
+                        }))) : payload.image_prediction.per_dataset,
+                    } : payload.image_prediction,
+                    report_analysis: payload.report_analysis ? {
+                        ...payload.report_analysis,
+                        symptoms: await translateTextList(payload.report_analysis.symptoms),
+                        summary: await translateTextValue(payload.report_analysis.summary),
+                        serious_findings: await translateTextList(payload.report_analysis.serious_findings),
+                        abnormal_findings: await translateTextList(payload.report_analysis.abnormal_findings),
+                        normal_findings: await translateTextList(payload.report_analysis.normal_findings),
+                        findings: payload.report_analysis.findings ? await Promise.all(payload.report_analysis.findings.map(async (item) => ({
+                            ...item,
+                            finding: await translateTextValue(item.finding),
+                            symptom: await translateTextValue(item.symptom),
+                            severity: await translateTextValue(item.severity),
+                        }))) : payload.report_analysis.findings,
+                    } : payload.report_analysis,
+                });
                 
                 // If it's a diagnosis message, we want to translate the structural data too
                 let textToTranslate: string = msg.content;
@@ -1819,17 +1895,19 @@ export default function ChatDashboard() {
                         const parsed = JSON.parse(msg.jsonPayload);
                         if (parsed.diagnosis || parsed.disease_info) {
                             payloadObj = parsed;
-                            // Pre-process payload for translation
-                            const toTranslate = {
-                                diagnosis: parsed.diagnosis,
-                                description: parsed.disease_info?.description,
-                                precautions: parsed.disease_info?.precautions,
-                                home_remedies: parsed.guidance?.home_remedies,
-                                lifestyle_changes: parsed.guidance?.lifestyle_changes,
-                                diet_adjustments: parsed.guidance?.diet_adjustments,
-                                text_content: msg.content // Also include main text
-                            };
-                            textToTranslate = JSON.stringify(toTranslate);
+                            const finalPayload = await translateDiagnosisPayload(parsed);
+                            const finalTranslation = await translateTextValue(msg.content);
+
+                            setTranslatedByMessage((prev) => ({
+                                ...prev,
+                                [msg.id]: {
+                                    content: finalTranslation || msg.content,
+                                    payload: finalPayload,
+                                }
+                            } as any));
+
+                            delete failedHindiPrefetchRef.current[msg.id];
+                            return true;
                         }
                     } catch { /* use msg.content as fallback */ }
                 }
@@ -1837,28 +1915,6 @@ export default function ChatDashboard() {
                 if (!payloadObj) {
                     structuredAnalysisObj = parseStructuredAnalysisForTranslation(msg.content);
                     if (structuredAnalysisObj) {
-                        const translateTextValue = async (value?: string) => {
-                            const cleanValue = (value || "").trim();
-                            if (!cleanValue) return value;
-
-                            const translated = await cachedFetch<{ translated_text?: string; error?: string }>(
-                                "/api/diagnose/translate",
-                                {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ text: cleanValue, target_lang: "hi" }),
-                                },
-                                10 * 60 * 1000
-                            );
-
-                            return translated.translated_text || value;
-                        };
-
-                        const translateTextList = async (items?: string[]) => {
-                            if (!Array.isArray(items)) return items;
-                            return Promise.all(items.map((item) => translateTextValue(item)));
-                        };
-
                         const finalStructuredAnalysis = structuredAnalysisObj.kind === "image"
                             ? {
                                 ...structuredAnalysisObj,
@@ -2530,7 +2586,7 @@ export default function ChatDashboard() {
                                                             {precautions.length > 0 ? (
                                                                 <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4">
                                                                     <div className="flex items-center gap-2 text-slate-700 text-[11px] uppercase tracking-wider font-semibold">
-                                                                        <ShieldCheck className="w-3.5 h-3.5" /> Self-Care Steps
+                                                                        <ShieldCheck className="w-3.5 h-3.5" /> {isHindi ? "स्व-देखभाल के कदम" : "Self-Care Steps"}
                                                                     </div>
                                                                     <ul className="mt-2 space-y-1.5 text-[13px] text-slate-700">
                                                                         {precautions.slice(0, 6).map((item: string, idx: number) => (
@@ -2550,7 +2606,7 @@ export default function ChatDashboard() {
                                                                      return (
                                                                          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4">
                                                                              <div className="flex items-center gap-2 text-slate-700 text-[11px] uppercase tracking-wider font-semibold mb-3">
-                                                                                 <Activity className="w-3.5 h-3.5" /> Dataset Prediction Chart
+                                                                                 <Activity className="w-3.5 h-3.5" /> {isHindi ? "डेटासेट अनुमान चार्ट" : "Dataset Prediction Chart"}
                                                                              </div>
                                                                              <div className="space-y-1">
                                                                                  {textPredictions.map((pred, idx) => (
@@ -2568,7 +2624,7 @@ export default function ChatDashboard() {
                                                                  return null;
                                                              })()}
 
-                                                             <div className="text-[11px] text-slate-500">This is informational only and not a final medical diagnosis.</div>
+                                                             <div className="text-[11px] text-slate-500">{isHindi ? "यह केवल जानकारी के लिए है और अंतिम चिकित्सा निदान नहीं है।" : "This is informational only and not a final medical diagnosis."}</div>
                                                         </div>
                                                     );
                                                 })()}
