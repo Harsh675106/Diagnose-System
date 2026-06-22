@@ -44,7 +44,7 @@ async function translateWithOpenAI(text: string, targetLang: string): Promise<st
               "You are a professional medical translator. Translate the provided medical text to " + 
               targetLang + 
               ". \n\n" +
-              "If the input is a JSON object, translate ONLY the values for these keys: 'diagnosis', 'description', 'precautions', 'home_remedies', 'lifestyle_changes', 'diet_adjustments'. Keep the JSON structure EXACTLY the same.\n" +
+              "If the input is a JSON object, translate ONLY user-facing string values, including values for these keys: 'diagnosis', 'description', 'precautions', 'home_remedies', 'lifestyle_changes', 'diet_adjustments', 'intro', 'observations', 'primary_signal', 'raw_signal', 'followup_text', 'report_summary', 'serious_findings', 'abnormal_findings', 'normal_findings', 'extracted_signals', 'text_content'. Keep keys, arrays, numbers, and the JSON structure EXACTLY the same.\n" +
               "If the input is plain text, just return the translated text.\n" +
               "IMPORTANT: Return ONLY the translated result, nothing else. No markdown blocks, no explanations.",
           },

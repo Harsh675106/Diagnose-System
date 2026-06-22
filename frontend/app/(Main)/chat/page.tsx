@@ -86,6 +86,26 @@ type DiagnosisPayload = {
     report_analysis?: ReportAnalysisPayload | null;
 };
 
+type StructuredAnalysisTranslation =
+    | {
+        kind: "image";
+        intro?: string;
+        observations?: string[];
+        primary_signal?: string;
+        raw_signal?: string;
+        followup_text?: string;
+    }
+    | {
+        kind: "report";
+        intro?: string;
+        report_summary?: string;
+        serious_findings?: string[];
+        abnormal_findings?: string[];
+        normal_findings?: string[];
+        extracted_signals?: string[];
+        followup_text?: string;
+    };
+
 type MedicalImageType = "chest" | "skin" | "retina" | "blood" | "pathology" | "unsure";
 
 const IMAGE_TYPE_OPTIONS: Array<{ value: MedicalImageType; label: string; hint: string }> = [
@@ -786,7 +806,7 @@ function fileToPreviewUrl(file: File): string {
     return URL.createObjectURL(file);
 }
 
-function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
+function parseStructuredAnalysisForTranslation(text: string): StructuredAnalysisTranslation | null {
     const normalized = text.trim();
 
     if (normalized.includes("I analyzed your uploaded image using trained MedMNIST image models.")) {
@@ -799,6 +819,61 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
         const rawSignal = normalized.match(/Raw highest-confidence dataset:\s*(.+?)(?:\n|$)/i)?.[1]?.trim();
         const followupBlock = normalized.match(/(\*\*Question\s+\d+:\*\*[\s\S]*)$/i)?.[1]?.trim();
 
+        return {
+            kind: "image",
+            intro: "I analyzed your uploaded image using trained MedMNIST image models.",
+            observations,
+            primary_signal: primarySignal,
+            raw_signal: rawSignal,
+            followup_text: followupBlock,
+        };
+    }
+
+    if (normalized.includes("I analyzed your uploaded medical report and extracted the clinically useful details.")) {
+        const sectionMatches = [...normalized.matchAll(/\*\*(.+?)\*\*\n([\s\S]*?)(?=\n\*\*|$)/g)];
+        const getList = (title: string) => sectionMatches
+            .find(([, sectionTitle]) => sectionTitle.toLowerCase() === title)?.[2]
+            ?.split("\n").map((line) => line.replace(/^- /, "").trim()).filter(Boolean) || [];
+        const extractedSignals = sectionMatches
+            .find(([, title]) => title.toLowerCase() === "symptoms/signals extracted for diagnosis")?.[2]
+            ?.split(",").map((item) => item.trim()).filter(Boolean) || [];
+        const followupBlock = normalized.match(/(\*\*Question\s+\d+:\*\*[\s\S]*)$/i)?.[1]?.trim();
+
+        return {
+            kind: "report",
+            intro: "I analyzed your uploaded medical report and extracted the clinically useful details.",
+            report_summary: sectionMatches.find(([, title]) => title.toLowerCase() === "report summary")?.[2]?.trim(),
+            serious_findings: getList("serious findings"),
+            abnormal_findings: getList("abnormal findings"),
+            normal_findings: getList("normal or stable findings"),
+            extracted_signals: extractedSignals,
+            followup_text: followupBlock,
+        };
+    }
+
+    return null;
+}
+
+function renderStructuredAnalysisMessage(text: string, translated?: StructuredAnalysisTranslation | null): React.ReactNode | null {
+    const normalized = text.trim();
+
+    if (normalized.includes("I analyzed your uploaded image using trained MedMNIST image models.")) {
+        const observationBlock = normalized.match(/Top image-model observations:\n([\s\S]*?)\n\nPrimary image signal/i)?.[1] || "";
+        const observations = translated?.kind === "image" && Array.isArray(translated.observations) ? translated.observations : observationBlock
+            .split("\n")
+            .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+            .filter(Boolean);
+        const primarySignal = translated?.kind === "image" && translated.primary_signal
+            ? translated.primary_signal
+            : normalized.match(/Primary image signal \(context-weighted\):\s*\*?\*?(.+?)\*?\*?(?:\n|$)/i)?.[1]?.trim();
+        const rawSignal = translated?.kind === "image" && translated.raw_signal
+            ? translated.raw_signal
+            : normalized.match(/Raw highest-confidence dataset:\s*(.+?)(?:\n|$)/i)?.[1]?.trim();
+        const followupBlock = translated?.kind === "image" && translated.followup_text
+            ? translated.followup_text
+            : normalized.match(/(\*\*Question\s+\d+:\*\*[\s\S]*)$/i)?.[1]?.trim();
+        const isTranslated = translated?.kind === "image";
+
         return (
             <div className="not-prose mt-1 max-w-2xl space-y-3">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-zinc-100 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
@@ -807,10 +882,10 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
                             <Activity className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">Image Analysis</div>
-                            <h3 className="mt-1 text-[17px] font-semibold text-slate-900">Medical image review completed</h3>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">{isTranslated ? "इमेज विश्लेषण" : "Image Analysis"}</div>
+                            <h3 className="mt-1 text-[17px] font-semibold text-slate-900">{isTranslated ? "मेडिकल इमेज समीक्षा पूरी हुई" : "Medical image review completed"}</h3>
                             <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
-                                I analyzed your uploaded image using trained MedMNIST image models.
+                                {isTranslated ? translated.intro : "I analyzed your uploaded image using trained MedMNIST image models."}
                             </p>
                         </div>
                     </div>
@@ -818,7 +893,7 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
                     {observations.length > 0 && (
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 p-4">
                             <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                                Top image-model observations
+                                {isTranslated ? "मुख्य इमेज-मॉडल अवलोकन" : "Top image-model observations"}
                             </div>
                             <div className="space-y-2">
                                 {observations.map((item, idx) => (
@@ -836,13 +911,13 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {primarySignal && (
                             <div className="rounded-2xl border border-slate-900 bg-slate-900 p-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">Primary signal</div>
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">{isTranslated ? "मुख्य संकेत" : "Primary signal"}</div>
                                 <div className="mt-2 text-[13px] font-medium leading-relaxed text-white">{primarySignal}</div>
                             </div>
                         )}
                         {rawSignal && (
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Highest raw confidence</div>
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{isTranslated ? "सबसे अधिक रॉ कॉन्फिडेंस" : "Highest raw confidence"}</div>
                                 <div className="mt-2 text-[13px] leading-relaxed text-slate-700">{rawSignal}</div>
                             </div>
                         )}
@@ -862,20 +937,25 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
 
     if (normalized.includes("I analyzed your uploaded medical report and extracted the clinically useful details.")) {
         const sectionMatches = [...normalized.matchAll(/\*\*(.+?)\*\*\n([\s\S]*?)(?=\n\*\*|$)/g)];
-        const summary = sectionMatches.find(([, title]) => title.toLowerCase() === "report summary")?.[2]?.trim();
-        const serious = sectionMatches
+        const summary = translated?.kind === "report" && translated.report_summary
+            ? translated.report_summary
+            : sectionMatches.find(([, title]) => title.toLowerCase() === "report summary")?.[2]?.trim();
+        const serious = translated?.kind === "report" && Array.isArray(translated.serious_findings) ? translated.serious_findings : sectionMatches
             .find(([, title]) => title.toLowerCase() === "serious findings")?.[2]
             ?.split("\n").map((line) => line.replace(/^- /, "").trim()).filter(Boolean) || [];
-        const abnormal = sectionMatches
+        const abnormal = translated?.kind === "report" && Array.isArray(translated.abnormal_findings) ? translated.abnormal_findings : sectionMatches
             .find(([, title]) => title.toLowerCase() === "abnormal findings")?.[2]
             ?.split("\n").map((line) => line.replace(/^- /, "").trim()).filter(Boolean) || [];
-        const normalFindings = sectionMatches
+        const normalFindings = translated?.kind === "report" && Array.isArray(translated.normal_findings) ? translated.normal_findings : sectionMatches
             .find(([, title]) => title.toLowerCase() === "normal or stable findings")?.[2]
             ?.split("\n").map((line) => line.replace(/^- /, "").trim()).filter(Boolean) || [];
-        const extractedSignals = sectionMatches
+        const extractedSignals = translated?.kind === "report" && Array.isArray(translated.extracted_signals) ? translated.extracted_signals : sectionMatches
             .find(([, title]) => title.toLowerCase() === "symptoms/signals extracted for diagnosis")?.[2]
             ?.split(",").map((item) => item.trim()).filter(Boolean) || [];
-        const followupBlock = normalized.match(/(\*\*Question\s+\d+:\*\*[\s\S]*)$/i)?.[1]?.trim();
+        const followupBlock = translated?.kind === "report" && translated.followup_text
+            ? translated.followup_text
+            : normalized.match(/(\*\*Question\s+\d+:\*\*[\s\S]*)$/i)?.[1]?.trim();
+        const isTranslated = translated?.kind === "report";
 
         const renderChips = (items: string[], tone: "red" | "amber" | "emerald") => {
             const tones = {
@@ -902,40 +982,40 @@ function renderStructuredAnalysisMessage(text: string): React.ReactNode | null {
                             <FileText className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">Report Analysis</div>
-                            <h3 className="mt-1 text-[17px] font-semibold text-slate-900">Medical report findings extracted</h3>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">{isTranslated ? "रिपोर्ट विश्लेषण" : "Report Analysis"}</div>
+                            <h3 className="mt-1 text-[17px] font-semibold text-slate-900">{isTranslated ? "मेडिकल रिपोर्ट के निष्कर्ष निकाले गए" : "Medical report findings extracted"}</h3>
                             <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
-                                I analyzed your uploaded medical report and extracted the clinically useful details.
+                                {isTranslated ? translated.intro : "I analyzed your uploaded medical report and extracted the clinically useful details."}
                             </p>
                         </div>
                     </div>
 
                     {summary && (
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 p-4">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Report summary</div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{isTranslated ? "रिपोर्ट सारांश" : "Report summary"}</div>
                             <div className="mt-2 text-[13px] leading-relaxed text-slate-700">{summary}</div>
                         </div>
                     )}
 
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div className="rounded-2xl border border-slate-900 bg-slate-900 p-4">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">Serious findings</div>
-                            {serious.length > 0 ? renderChips(serious, "red") : <div className="mt-2 text-[13px] text-slate-300">No serious markers highlighted.</div>}
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">{isTranslated ? "गंभीर निष्कर्ष" : "Serious findings"}</div>
+                            {serious.length > 0 ? renderChips(serious, "red") : <div className="mt-2 text-[13px] text-slate-300">{isTranslated ? "कोई गंभीर संकेत हाइलाइट नहीं हुआ।" : "No serious markers highlighted."}</div>}
                         </div>
                         <div className="rounded-2xl border border-slate-300 bg-slate-100 p-4">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Abnormal findings</div>
-                            {abnormal.length > 0 ? renderChips(abnormal, "amber") : <div className="mt-2 text-[13px] text-slate-500">No abnormal markers highlighted.</div>}
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">{isTranslated ? "असामान्य निष्कर्ष" : "Abnormal findings"}</div>
+                            {abnormal.length > 0 ? renderChips(abnormal, "amber") : <div className="mt-2 text-[13px] text-slate-500">{isTranslated ? "कोई असामान्य संकेत हाइलाइट नहीं हुआ।" : "No abnormal markers highlighted."}</div>}
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Normal or stable</div>
-                            {normalFindings.length > 0 ? renderChips(normalFindings, "emerald") : <div className="mt-2 text-[13px] text-slate-500">No stable findings highlighted.</div>}
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{isTranslated ? "सामान्य या स्थिर" : "Normal or stable"}</div>
+                            {normalFindings.length > 0 ? renderChips(normalFindings, "emerald") : <div className="mt-2 text-[13px] text-slate-500">{isTranslated ? "कोई स्थिर निष्कर्ष हाइलाइट नहीं हुआ।" : "No stable findings highlighted."}</div>}
                         </div>
                     </div>
 
                     {extractedSignals.length > 0 && (
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 p-4">
                             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                                Symptoms and signals used for diagnosis
+                                {isTranslated ? "निदान के लिए उपयोग किए गए लक्षण और संकेत" : "Symptoms and signals used for diagnosis"}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
                                 {extractedSignals.map((item, idx) => (
@@ -1014,7 +1094,7 @@ export default function ChatDashboard() {
     const [resultPanelMinimized, setResultPanelMinimized] = useState(false);
     const [mobilePanel, setMobilePanel] = useState<"none" | "history" | "prediction">("none");
     const [hindiByMessage, setHindiByMessage] = useState<Record<string, boolean>>({});
-    const [translatedByMessage, setTranslatedByMessage] = useState<Record<string, string | { content: string; payload?: DiagnosisPayload }>>({});
+    const [translatedByMessage, setTranslatedByMessage] = useState<Record<string, string | { content: string; payload?: DiagnosisPayload; structuredAnalysis?: StructuredAnalysisTranslation }>>({});
     const [translatingByMessage, setTranslatingByMessage] = useState<Record<string, boolean>>({});
     const [imageAnalysisProgress, setImageAnalysisProgress] = useState(0);
     const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
@@ -1732,6 +1812,7 @@ export default function ChatDashboard() {
                 // If it's a diagnosis message, we want to translate the structural data too
                 let textToTranslate: string = msg.content;
                 let payloadObj: any = null;
+                let structuredAnalysisObj: StructuredAnalysisTranslation | null = null;
                 
                 if (msg.jsonPayload) {
                     try {
@@ -1752,6 +1833,13 @@ export default function ChatDashboard() {
                         }
                     } catch { /* use msg.content as fallback */ }
                 }
+                
+                if (!payloadObj) {
+                    structuredAnalysisObj = parseStructuredAnalysisForTranslation(msg.content);
+                    if (structuredAnalysisObj) {
+                        textToTranslate = JSON.stringify(structuredAnalysisObj);
+                    }
+                }
 
                 // ✅ USE CACHED FETCH: Translation results are cacheable for 10 minutes
                 const data = await cachedFetch<{ translated_text?: string; error?: string }>(
@@ -1770,6 +1858,7 @@ export default function ChatDashboard() {
 
                 let finalTranslation = data.translated_text || msg.content;
                 let finalPayload: DiagnosisPayload | undefined = undefined;
+                let finalStructuredAnalysis: StructuredAnalysisTranslation | undefined = undefined;
 
                 if (finalTranslation.startsWith("{")) {
                     try {
@@ -1792,6 +1881,12 @@ export default function ChatDashboard() {
                                 }
                             };
                             finalTranslation = jsonParsed.text_content || msg.content;
+                        } else if (structuredAnalysisObj && jsonParsed.kind === structuredAnalysisObj.kind) {
+                            finalStructuredAnalysis = {
+                                ...structuredAnalysisObj,
+                                ...jsonParsed,
+                            } as StructuredAnalysisTranslation;
+                            finalTranslation = jsonParsed.intro || msg.content;
                         } else if (jsonParsed.text || jsonParsed.translated_text) {
                             finalTranslation = (jsonParsed.text || jsonParsed.translated_text || finalTranslation).trim();
                         }
@@ -1802,7 +1897,8 @@ export default function ChatDashboard() {
                     ...prev, 
                     [msg.id]: { 
                         content: finalTranslation, 
-                        payload: finalPayload 
+                        payload: finalPayload,
+                        structuredAnalysis: finalStructuredAnalysis,
                     } 
                 } as any));
                 
@@ -2343,7 +2439,10 @@ export default function ChatDashboard() {
                                                     }
 
                                                     if (!diagnosisPayload) {
-                                                        const structuredAnalysis = !isHindi ? renderStructuredAnalysisMessage(renderedText) : null;
+                                                        const structuredAnalysis = renderStructuredAnalysisMessage(
+                                                            isHindi ? msg.content : renderedText,
+                                                            isHindi ? hindiData?.structuredAnalysis : null
+                                                        );
                                                         if (structuredAnalysis) {
                                                             return structuredAnalysis;
                                                         }
