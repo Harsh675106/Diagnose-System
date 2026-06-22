@@ -25,3 +25,4 @@ __pycache__/
 backend/medical_ML/data/*.npz
 
 Overall.txt
+docs/
