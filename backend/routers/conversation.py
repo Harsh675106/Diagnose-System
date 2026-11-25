@@ -13,7 +13,7 @@ LOGGER = logging.getLogger("medcore.router.conversation")
 # Open API configuration
 OPEN_API_BASE_URL = os.getenv("OPEN_API_BASE_URL")
 OPEN_API_KEY = os.getenv("OPEN_API_KEY", "")
-OPEN_API_MODEL = os.getenv("OPEN_API_MODEL", "gpt-3.5-turbo")
+OPEN_API_MODEL = os.getenv("OPEN_API_MODEL")
 
 
 
