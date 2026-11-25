@@ -11,9 +11,20 @@ router = APIRouter(prefix="/api/conversation", tags=["conversation"])
 LOGGER = logging.getLogger("medcore.router.conversation")
 
 # Open API configuration
-OPEN_API_BASE_URL = os.getenv("OPEN_API_BASE_URL")
-OPEN_API_KEY = os.getenv("OPEN_API_KEY", "")
-OPEN_API_MODEL = os.getenv("OPEN_API_MODEL")
+OPEN_API_BASE_URL = (
+    os.getenv("OPEN_API_BASE_URL")
+    or os.getenv("OPENAI_BASE_URL")
+    or "https://api.openai.com/v1"
+).rstrip("/")
+OPEN_API_KEY = (
+    os.getenv("OPEN_API_KEY")
+    or os.getenv("OPENAI_API_KEY", "")
+).strip()
+OPEN_API_MODEL = (
+    os.getenv("OPEN_API_MODEL")
+    or os.getenv("OPENAI_MODEL")
+    or "gpt-4o-mini"
+).strip()
 
 
 

@@ -19,17 +19,21 @@ def _get_cached_ui_word(word: str, target_lang: str) -> str:
 
 def _translate_chunk(text: str, target_lang: str) -> str:
     """Translate a chunk of text with fresh translator instance."""
-    # Create a new translator instance for each chunk to avoid caching
-    translator = GoogleTranslator(source="auto", target=target_lang)
-    result = translator.translate(text)
-    
-    # If translation fails or returns empty, return original text as fallback
-    if not result or result.strip() == "":
-        return text
+    try:
+        # Create a new translator instance for each chunk to avoid caching
+        translator = GoogleTranslator(source="auto", target=target_lang)
+        result = translator.translate(text)
         
-    # Add small delay to avoid rate limiting and cache issues
-    time.sleep(0.05)
-    return result
+        # If translation fails or returns empty, return original text as fallback
+        if not result or result.strip() == "":
+            return text
+            
+        # Add small delay to avoid rate limiting and cache issues
+        time.sleep(0.05)
+        return result
+    except Exception:
+        # Fallback to original text on any network/rate-limiting/API error
+        return text
 
 
 def translate_text(text: str, target_lang: str = "hi") -> str:

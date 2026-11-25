@@ -417,16 +417,14 @@ async def translate_endpoint(request: Request) -> dict[str, Any]:
             from translator.service import translate_diagnosis_message
 
             result = translate_diagnosis_message(text=text, target_lang=target_lang)
-            translated = result["translated_text"]
+            translated = result.get("translated_text", text)
         else:
             from translator.service import translate_text
 
             translated = translate_text(text=text, target_lang=target_lang)
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Translation failed: {exc}",
-        )
+        LOGGER.warning("Translation endpoint error, falling back to original text: %s", exc)
+        translated = text
 
     return {
         "source_text": text,
